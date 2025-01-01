@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MP4 to WAV Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+        input, button {
+            margin: 10px;
+        }
+        #progress {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>MP4 to WAV Converter</h1>
+    <input type="file" id="inputFile" accept="video/mp4">
+    <button id="convertButton">Convert to WAV</button>
+    <div id="progress"></div>
+    <a id="downloadLink" style="display: none;">Download WAV</a>
+    <script>
+        const inputFile = document.getElementById('inputFile');
+        const convertButton = document.getElementById('convertButton');
+        const progressDiv = document.getElementById('progress');
+        const downloadLink = document.getElementById('downloadLink');
+
+        convertButton.addEventListener('click', async () => {
+            if (!inputFile.files.length) {
+                alert('Please select an MP4 file.');
+                return;
+            }
+
+            const file = inputFile.files[0];
+            const url = URL.createObjectURL(file);
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            progressDiv.textContent = 'Extracting audio...';
+
+            try {
+                // Загружаем аудио из MP4 файла
+                const response = await fetch(url);
+                const arrayBuffer = await response.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+                // Конвертация аудиоданных в WAV
+                const wavBlob = audioBufferToWav(audioBuffer);
+                const wavUrl = URL.createObjectURL(wavBlob);
+
+                // Отображаем ссылку для скачивания
+                downloadLink.href = wavUrl;
+                downloadLink.download = 'output.wav';
+                downloadLink.textContent = 'Download WAV';
+                downloadLink.style.display = 'block';
+
+                progressDiv.textContent = 'Conversion complete!';
+            } catch (error) {
+                progressDiv.textContent = 'An error occurred during conversion.';
+                console.error(error);
+            }
+        });
+
+        function audioBufferToWav(buffer) {
+            const numberOfChannels = buffer.numberOfChannels;
+            const length = buffer.length * numberOfChannels * 2 + 44;
+            const wav = new DataView(new ArrayBuffer(length));
+
+            // Записываем заголовок WAV
+            writeString(wav, 0, 'RIFF');
+            wav.setUint32(4, length - 8, true);
+            writeString(wav, 8, 'WAVE');
+            writeString(wav, 12, 'fmt ');
+            wav.setUint32(16, 16, true);
+            wav.setUint16(20, 1, true);
+            wav.setUint16(22, numberOfChannels, true);
+            wav.setUint32(24, buffer.sampleRate, true);
+            wav.setUint32(28, buffer.sampleRate * numberOfChannels * 2, true);
+            wav.setUint16(32, numberOfChannels * 2, true);
+            wav.setUint16(34, 16, true);
+            writeString(wav, 36, 'data');
+            wav.setUint32(40, length - 44, true);
+
+            // Записываем аудиоданные
+            const output = new Float32Array(buffer.length * numberOfChannels);
+            for (let i = 0; i < buffer.numberOfChannels; i++) {
+                output.set(buffer.getChannelData(i), i);
+            }
+
+            let offset = 44;
+            for (let i = 0; i < output.length; i++) {
+                const s = Math.max(-1, Math.min(1, output[i]));
+                wav.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                offset += 2;
+            }
+
+            return new Blob([wav], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+    </script>
+</body>
+</html>
